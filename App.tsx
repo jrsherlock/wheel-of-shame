@@ -67,7 +67,7 @@ export default function App() {
       {/* Background atmosphere */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-red-950/20 via-[#0a0a0f] to-black" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-red-600/[0.04] blur-[120px] rounded-full" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-red-600/[0.04] blur-[60px] sm:blur-[120px] rounded-full" />
       </div>
 
       {/* Navbar */}
@@ -103,7 +103,7 @@ export default function App() {
         {/* Wheel */}
         <div className="relative flex justify-center">
           {/* Glow behind wheel */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-indigo-500/[0.06] rounded-full blur-[60px] pointer-events-none animate-pulse-glow" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-indigo-500/[0.06] rounded-full blur-[30px] sm:blur-[60px] pointer-events-none animate-pulse-glow" />
 
           <PunishmentWheel
             mustSpin={mustSpin}
@@ -166,7 +166,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/85 backdrop-blur-sm animate-fade-in"
+            className="absolute inset-0 bg-black/90 animate-fade-in"
             onClick={() => setShowResultModal(false)}
           />
 
