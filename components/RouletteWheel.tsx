@@ -25,6 +25,8 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const animIdRef = useRef<number>(0);
 
   const state = useRef({
     phase: 'IDLE' as 'IDLE' | 'ACCELERATING' | 'SPINNING' | 'DECELERATING' | 'STOPPED',
@@ -37,6 +39,9 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
   });
 
   const sliceAngle = TWO_PI / Math.max(1, punishments.length);
+
+  // Cap DPR to 2 — an iPhone 15 Pro is DPR 3, which means a 1800×1800 canvas. Way too big.
+  const dpr = useMemo(() => Math.min(window.devicePixelRatio || 1, 2), []);
 
   const textLayouts = useMemo(() => {
     const tempCanvas = document.createElement('canvas');
@@ -93,17 +98,109 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
     });
   }, [punishments, sliceAngle]);
 
+  // Pre-render the entire wheel face (slices, text, ticks, rim) to an offscreen canvas.
+  // This runs once when punishments change — not 60 times per second.
+  const buildOffscreen = useCallback(() => {
+    const osc = document.createElement('canvas');
+    osc.width = CANVAS_SIZE * dpr;
+    osc.height = CANVAS_SIZE * dpr;
+    const ctx = osc.getContext('2d');
+    if (!ctx) return osc;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.translate(CENTER, CENTER);
+
+    // Outer rim
+    ctx.beginPath();
+    ctx.arc(0, 0, RADIUS + 14, 0, TWO_PI);
+    const rimGrad = ctx.createLinearGradient(-RADIUS, -RADIUS, RADIUS, RADIUS);
+    rimGrad.addColorStop(0, '#334155');
+    rimGrad.addColorStop(0.5, '#1e293b');
+    rimGrad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = rimGrad;
+    ctx.fill();
+
+    // Tick marks
+    const tickCount = punishments.length * 4;
+    for (let i = 0; i < tickCount; i++) {
+      const angle = (i / tickCount) * TWO_PI;
+      const isMajor = i % 4 === 0;
+      ctx.save();
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(RADIUS + 2, 0);
+      ctx.lineTo(RADIUS + (isMajor ? 12 : 7), 0);
+      ctx.strokeStyle = isMajor ? '#64748b' : '#334155';
+      ctx.lineWidth = isMajor ? 2 : 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Inner shadow ring
+    ctx.beginPath();
+    ctx.arc(0, 0, RADIUS + 1, 0, TWO_PI);
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Slices — create gradient once, reuse for every slice
+    const depthGrad = ctx.createRadialGradient(0, 0, RADIUS * 0.1, 0, 0, RADIUS);
+    depthGrad.addColorStop(0, 'rgba(255,255,255,0.06)');
+    depthGrad.addColorStop(0.7, 'rgba(0,0,0,0.0)');
+    depthGrad.addColorStop(1, 'rgba(0,0,0,0.15)');
+
+    punishments.forEach((p, i) => {
+      const startAngle = i * sliceAngle;
+      const endAngle = startAngle + sliceAngle;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, RADIUS, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fillStyle = p.color;
+      ctx.fill();
+
+      ctx.fillStyle = depthGrad;
+      ctx.fill();
+
+      // Divider line
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(startAngle) * RADIUS, Math.sin(startAngle) * RADIUS);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Text — manual offset shadow instead of ctx.shadowBlur (shadowBlur is GPU-expensive)
+      ctx.save();
+      ctx.rotate(startAngle + sliceAngle / 2);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      const layout = textLayouts[i];
+      ctx.font = layout.font;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillText(layout.text, RADIUS - 29, 1);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(layout.text, RADIUS - 30, 0);
+
+      ctx.restore();
+    });
+
+    return osc;
+  }, [punishments, sliceAngle, textLayouts, dpr]);
+
+  // Hub — drawn every frame but very cheap (just circles, no shadows)
   const drawHub = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.save();
     ctx.translate(CENTER, CENTER);
 
     ctx.beginPath();
     ctx.arc(0, 0, 40, 0, TWO_PI);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.fillStyle = '#080e1a';
     ctx.fill();
-    ctx.shadowBlur = 0;
 
     ctx.beginPath();
     ctx.arc(0, 0, 36, 0, TWO_PI);
@@ -135,13 +232,10 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
     ctx.restore();
   }, []);
 
+  // Pointer — drawn every frame, also very cheap
   const drawPointer = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.save();
     ctx.translate(CENTER, 22);
-
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 2;
 
     ctx.beginPath();
     ctx.moveTo(-16, -20);
@@ -159,8 +253,6 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
-
     ctx.beginPath();
     ctx.moveTo(0, -8);
     ctx.lineTo(0, 20);
@@ -176,22 +268,56 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
     return a - TWO_PI * Math.floor(a / TWO_PI);
   }, []);
 
-  // Main render loop — draws wheel every frame (no offscreen cache needed at this canvas size)
+  // Composite one frame: clear → rotated offscreen wheel → hub → pointer
+  const drawFrame = useCallback((ctx: CanvasRenderingContext2D, angle: number) => {
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    ctx.save();
+    ctx.translate(CENTER, CENTER);
+    ctx.rotate(angle);
+    ctx.translate(-CENTER, -CENTER);
+    if (offscreenRef.current) {
+      ctx.drawImage(offscreenRef.current, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    }
+    ctx.restore();
+
+    drawHub(ctx);
+    drawPointer(ctx);
+  }, [drawHub, drawPointer]);
+
+  // Build offscreen + draw initial static frame when punishments change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
     canvas.width = CANVAS_SIZE * dpr;
     canvas.height = CANVAS_SIZE * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    let animationFrameId: number;
+    offscreenRef.current = buildOffscreen();
+    drawFrame(ctx, state.current.angle);
+  }, [punishments, textLayouts, dpr, buildOffscreen, drawFrame]);
 
-    const render = (time: number) => {
-      const s = state.current;
+  // Animation loop — only runs while spinning, stops when idle/stopped (0% CPU when static)
+  useEffect(() => {
+    if (!mustSpin) return;
+
+    const s = state.current;
+    if (s.phase !== 'IDLE' && s.phase !== 'STOPPED') return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    s.phase = 'ACCELERATING';
+    s.timeInPhase = 0;
+    s.lastFrameTime = 0;
+    s.finished = false;
+
+    const loop = (time: number) => {
       if (!s.lastFrameTime) s.lastFrameTime = time;
       const dt = Math.min((time - s.lastFrameTime) / 1000, 0.1);
       s.lastFrameTime = time;
@@ -253,119 +379,16 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
       }
 
       s.angle += s.velocity * dt;
+      drawFrame(ctx, s.angle);
 
-      // ── Draw ──
-      ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-      ctx.save();
-      ctx.translate(CENTER, CENTER);
-      ctx.rotate(s.angle);
-
-      // Outer rim
-      ctx.beginPath();
-      ctx.arc(0, 0, RADIUS + 14, 0, TWO_PI);
-      const rimGrad = ctx.createLinearGradient(-RADIUS, -RADIUS, RADIUS, RADIUS);
-      rimGrad.addColorStop(0, '#334155');
-      rimGrad.addColorStop(0.5, '#1e293b');
-      rimGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = rimGrad;
-      ctx.fill();
-
-      // Tick marks
-      const tickCount = punishments.length * 4;
-      for (let i = 0; i < tickCount; i++) {
-        const angle = (i / tickCount) * TWO_PI;
-        const isMajor = i % 4 === 0;
-        ctx.save();
-        ctx.rotate(angle);
-        ctx.beginPath();
-        ctx.moveTo(RADIUS + 2, 0);
-        ctx.lineTo(RADIUS + (isMajor ? 12 : 7), 0);
-        ctx.strokeStyle = isMajor ? '#64748b' : '#334155';
-        ctx.lineWidth = isMajor ? 2 : 1;
-        ctx.stroke();
-        ctx.restore();
+      if (s.phase !== 'STOPPED') {
+        animIdRef.current = requestAnimationFrame(loop);
       }
-
-      // Inner shadow ring
-      ctx.beginPath();
-      ctx.arc(0, 0, RADIUS + 1, 0, TWO_PI);
-      ctx.strokeStyle = '#020617';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Slices
-      punishments.forEach((p, i) => {
-        const startAngle = i * sliceAngle;
-        const endAngle = startAngle + sliceAngle;
-
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, RADIUS, startAngle, endAngle);
-        ctx.closePath();
-        ctx.fillStyle = p.color;
-        ctx.fill();
-
-        // Depth gradient
-        const depthGrad = ctx.createRadialGradient(0, 0, RADIUS * 0.1, 0, 0, RADIUS);
-        depthGrad.addColorStop(0, 'rgba(255,255,255,0.06)');
-        depthGrad.addColorStop(0.7, 'rgba(0,0,0,0.0)');
-        depthGrad.addColorStop(1, 'rgba(0,0,0,0.15)');
-        ctx.fillStyle = depthGrad;
-        ctx.fill();
-
-        // Divider line
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(startAngle) * RADIUS, Math.sin(startAngle) * RADIUS);
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        // Text
-        ctx.save();
-        ctx.rotate(startAngle + sliceAngle / 2);
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-
-        const layout = textLayouts[i];
-        ctx.font = layout.font;
-
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
-        ctx.shadowBlur = 3;
-        ctx.shadowOffsetX = 1;
-        ctx.shadowOffsetY = 1;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(layout.text, RADIUS - 30, 0);
-        ctx.shadowBlur = 0;
-
-        ctx.restore();
-      });
-
-      ctx.restore(); // undo rotation
-
-      // Static elements (hub + pointer)
-      drawHub(ctx);
-      drawPointer(ctx);
-
-      animationFrameId = requestAnimationFrame(render);
     };
 
-    animationFrameId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [punishments, spinDuration, sliceAngle, textLayouts, drawHub, drawPointer, normalizeAngle, onStopSpinning]);
-
-  // Trigger spin
-  useEffect(() => {
-    if (mustSpin) {
-      const s = state.current;
-      if (s.phase === 'IDLE' || s.phase === 'STOPPED') {
-        s.phase = 'ACCELERATING';
-        s.timeInPhase = 0;
-        s.finished = false;
-      }
-    }
-  }, [mustSpin]);
+    animIdRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animIdRef.current);
+  }, [mustSpin, spinDuration, sliceAngle, normalizeAngle, onStopSpinning, drawFrame]);
 
   // Target update
   useEffect(() => {
