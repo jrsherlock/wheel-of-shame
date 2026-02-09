@@ -390,9 +390,9 @@ export const PunishmentWheel: React.FC<PunishmentWheelProps> = ({
   }, [targetId, punishments]);
 
   return (
-    <div className="relative w-[90vw] h-[90vw] max-w-[340px] max-h-[340px] sm:w-[500px] sm:h-[500px] sm:max-w-none sm:max-h-none">
+    <div className="relative w-[340px] h-[340px] sm:w-[500px] sm:h-[500px]">
         {/* Wheel Container with heavy shadow */}
-        <div className="absolute inset-0 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.6)] sm:shadow-[0_30px_60px_rgba(0,0,0,0.6)] bg-slate-900 border-[3px] sm:border-[4px] border-slate-800 rounded-full overflow-hidden">
+        <div className="absolute inset-0 rounded-full shadow-[0_30px_60px_rgba(0,0,0,0.6)] bg-slate-900 border-[4px] border-slate-800 rounded-full overflow-hidden">
              <canvas ref={canvasRef} className="w-full h-full block" />
              
              {/* Modern Gloss overlay (Subtle) */}
