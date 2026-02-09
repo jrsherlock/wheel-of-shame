@@ -221,10 +221,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Hash className="w-3.5 h-3.5" /> Pre-Spin Determination
             </h3>
 
+            <div className="relative">
             <select
               value={config.forceResultId ?? ''}
               onChange={(e) => handleChange('forceResultId', e.target.value || null)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-[Russo_One] text-sm tracking-wide appearance-none cursor-pointer active:bg-slate-700 sm:hover:bg-slate-700 transition-colors touch-manipulation"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 pr-10 text-white focus:ring-2 focus:ring-blue-500 outline-none font-[Russo_One] text-sm tracking-wide appearance-none cursor-pointer active:bg-slate-700 sm:hover:bg-slate-700 transition-colors touch-manipulation"
             >
               <option value="">-- RNG MODE (RANDOM) --</option>
               {punishments.map((p, idx) => (
@@ -233,6 +234,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </option>
               ))}
             </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+              <svg className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+              </svg>
+            </div>
+            </div>
           </div>
         </div>
       </div>
